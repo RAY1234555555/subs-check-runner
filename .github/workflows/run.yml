@@ -1,0 +1,73 @@
+name: Run Subs-Check
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # 每6小时运行一次（0:00、6:00、12:00、18:00 UTC）
+  workflow_dispatch:       # 允许手动触发
+
+jobs:
+  run-subs-check:
+    runs-on: ubuntu-latest
+    steps:
+      # 检出代码
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 设置 Docker 环境
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 配置 Docker 镜像加速源
+      - name: Configure Docker Mirror
+        run: |
+          sudo mkdir -p /etc/docker
+          echo '{"registry-mirrors": ["https://docker.imgdb.de"]}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+
+      # 读取 url.txt 并替换 config.yaml 中的 sub-urls
+      - name: Prepare Config with Sub-URLs
+        run: |
+          SUB_URLS=$(cat url.txt | sed 's/^/    - /g' | sed 's/\r$//')
+          sed -i "/sub-urls:/,/placeholder/c\sub-urls:\n$SUB_URLS" config.yaml
+          cat config.yaml  # 检查替换结果
+
+      # 运行 Subs-Check 容器
+      - name: Run Subs-Check Container
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}    # 修改为 GH_TOKEN
+          GIST_ID: ${{ secrets.GIST_ID }}
+        run: |
+          docker run -d --name subs-check \
+            -v $(pwd)/config.yaml:/app/config \
+            -v $(pwd)/output:/app/output \
+            -e GH_TOKEN=$GH_TOKEN \            # 修改为 GH_TOKEN
+            -e GIST_ID=$GIST_ID \
+            ghcr.io/beck-8/subs-check:latest
+          # 等待容器运行完成（根据任务时间调整）
+          sleep 300  # 等待5分钟
+          docker logs subs-check
+
+      # 发送 Telegram 通知
+      - name: Send Telegram Notification
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          MESSAGE="Subs-Check completed at $(date). Check results at https://gist.github.com/$GIST_ID"
+          curl -s -X POST \
+            "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage" \
+            -d chat_id="$TELEGRAM_CHAT_ID" \
+            -d text="$MESSAGE"
+
+      # 检查输出文件
+      - name: Check Output
+        run: |
+          ls -la output/
+          cat output/all.yaml || echo "No output file found"
+
+      # 上传输出文件（可选）
+      - name: Upload Output Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: subs-check-output
+          path: output/
