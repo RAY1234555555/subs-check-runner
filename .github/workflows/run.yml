@@ -4,6 +4,9 @@ on:
   schedule:
     - cron: '0 */6 * * *'  # 每6小时运行一次（0:00、6:00、12:00、18:00 UTC）
   workflow_dispatch:       # 允许手动触发
+  push:
+    paths:
+      - 'config.yaml'      # 监听 config.yaml 的变化
 
 jobs:
   run-subs-check:
@@ -27,20 +30,24 @@ jobs:
       # 读取 url.txt 并替换 config.yaml 中的 sub-urls
       - name: Prepare Config with Sub-URLs
         run: |
-          SUB_URLS=$(cat url.txt | sed 's/^/    - /g' | sed 's/\r$//')
-          sed -i "/sub-urls:/,/placeholder/c\sub-urls:\n$SUB_URLS" config.yaml
-          cat config.yaml  # 检查替换结果
+          # 读取 url.txt，过滤空行，添加 YAML 格式缩进和引号
+          SUB_URLS=$(cat url.txt | grep -v '^$' | sed 's/^/    - "/; s/$/"/')
+          # 创建临时文件，替换 sub-urls 部分
+          sed "/sub-urls:/,/placeholder/c\sub-urls:\n$SUB_URLS" config.yaml > temp.yaml
+          mv temp.yaml config.yaml
+          # 检查替换结果
+          cat config.yaml
 
       # 运行 Subs-Check 容器
       - name: Run Subs-Check Container
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}    # 修改为 GH_TOKEN
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
         run: |
           docker run -d --name subs-check \
             -v $(pwd)/config.yaml:/app/config \
             -v $(pwd)/output:/app/output \
-            -e GH_TOKEN=$GH_TOKEN \            # 修改为 GH_TOKEN
+            -e GH_TOKEN=$GH_TOKEN \
             -e GIST_ID=$GIST_ID \
             ghcr.io/beck-8/subs-check:latest
           # 等待容器运行完成（根据任务时间调整）
