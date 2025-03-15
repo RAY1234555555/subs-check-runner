@@ -33,7 +33,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
         run: |
-          # 从 url.txt 生成 sub-urls 部分
+          # 从 url.txt 生成 sub-urls 内容
           SUB_URLS=$(cat url.txt | grep -v '^$' | sed 's/^/    - "/; s/$/"/')
           # 直接生成完整的 config.yaml
           cat <<EOF > config.yaml
@@ -68,7 +68,7 @@ jobs:
           keep-success-proxies: false
 
           # 输出目录（适配 GitHub Actions）
-          output-dir: "./output"
+          output-dir: "/app/output"
 
           # Telegram 通知（直接使用 API，由工作流处理）
           recipient-url:
@@ -95,15 +95,21 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
         run: |
+          # 启动容器，挂载配置文件到正确路径
           docker run -d --name subs-check \
-            -v $(pwd)/config.yaml:/app/config \
+            -v $(pwd)/config.yaml:/app/config/config.yaml \
             -v $(pwd)/output:/app/output \
             -e GH_TOKEN=$GH_TOKEN \
             -e GIST_ID=$GIST_ID \
             ghcr.io/beck-8/subs-check:latest
-          # 等待容器运行完成（根据任务时间调整）
-          sleep 300  # 等待5分钟
-          docker logs subs-check
+          # 等待容器运行，最多等待15分钟（900秒）
+          timeout 900s bash -c "until docker ps -q -f name=subs-check | grep -q .; do sleep 5; done"
+          # 显示实时日志
+          docker logs -f subs-check || echo "Container stopped or no logs available"
+          # 检查容器退出码
+          EXIT_CODE=$(docker inspect subs-check --format='{{.State.ExitCode}}')
+          echo "Container exited with code: $EXIT_CODE"
+          if [ "$EXIT_CODE" -ne 0 ]; then exit $EXIT_CODE; fi
 
       # 发送 Telegram 通知
       - name: Send Telegram Notification
@@ -111,7 +117,9 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          MESSAGE="Subs-Check completed at $(date). Check results at https://gist.github.com/$GIST_ID"
+          # 从日志中提取可用节点数（假设日志中有 "可用节点数量: X"）
+          NODE_COUNT=$(docker logs subs-check | grep "可用节点数量" | tail -1 | awk '{print $NF}' || echo "0")
+          MESSAGE="更新了 $NODE_COUNT 个节点"
           curl -s -X POST \
             "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage" \
             -d chat_id="$TELEGRAM_CHAT_ID" \
@@ -123,7 +131,7 @@ jobs:
           ls -la output/
           cat output/all.yaml || echo "No output file found"
 
-      # 上传输出文件（可选）
+      # 上传输出文件到 GitHub Artifacts
       - name: Upload Output Artifact
         uses: actions/upload-artifact@v4
         with:
