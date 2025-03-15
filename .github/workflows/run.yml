@@ -40,14 +40,14 @@ jobs:
           # 是否显示进度
           print-progress: true
 
-          # 并发线程数
-          concurrent: 20
+          # 并发线程数（增加到50）
+          concurrent: 50
 
           # 检查间隔(分钟)
           check-interval: 30
 
           # 超时时间(毫秒)(节点的最大延迟)
-          timeout: 5000
+          timeout: 3000
 
           # 测速地址
           speed-test-url: https://gh-proxy.henryjiu.workers.dev/https://github.com/AaronFeng753/Waifu2x-Extension-GUI/releases/download/v2.21.12/Waifu2x-Extension-GUI-v2.21.12-Portable.7z
@@ -67,7 +67,7 @@ jobs:
           # 保留之前测试成功的节点
           keep-success-proxies: false
 
-          # 输出目录（适配 GitHub Actions）
+          # 输出目录
           output-dir: "/app/output"
 
           # Telegram 通知（直接使用 API，由工作流处理）
@@ -102,8 +102,8 @@ jobs:
             -e GH_TOKEN=$GH_TOKEN \
             -e GIST_ID=$GIST_ID \
             ghcr.io/beck-8/subs-check:latest
-          # 等待容器运行，最多等待15分钟（900秒）
-          timeout 900s bash -c "until docker ps -q -f name=subs-check | grep -q .; do sleep 5; done"
+          # 等待容器运行，最多等待20分钟（1200秒）
+          timeout 1200s bash -c "until docker ps -q -f name=subs-check | grep -q .; do sleep 5; done"
           # 显示实时日志
           docker logs -f subs-check || echo "Container stopped or no logs available"
           # 检查容器退出码
@@ -117,8 +117,8 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          # 从日志中提取可用节点数（假设日志中有 "可用节点数量: X"）
-          NODE_COUNT=$(docker logs subs-check | grep "可用节点数量" | tail -1 | awk '{print $NF}' || echo "0")
+          # 从日志中提取可用节点数（假设日志中有 "可用节点数量: X" 或类似格式）
+          NODE_COUNT=$(docker logs subs-check | grep -oP '可用节点数量\D*\K\d+' | tail -1 || echo "0")
           MESSAGE="更新了 $NODE_COUNT 个节点"
           curl -s -X POST \
             "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage" \
