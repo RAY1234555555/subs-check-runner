@@ -6,7 +6,7 @@ on:
   workflow_dispatch:       # 允许手动触发
   push:
     paths:
-      - 'config.yaml'      # 监听 config.yaml 的变化
+      - 'run.yml'      # 监听 config.yaml 的变化
 
 jobs:
   run-subs-check:
@@ -43,8 +43,8 @@ jobs:
           # 并发线程数
           concurrent: 50
 
-          # 检查间隔(分钟)
-          check-interval: 30
+          # 检查间隔(分钟，设为0以立即检测)
+          check-interval: 0
 
           # 超时时间(毫秒)(节点的最大延迟)
           timeout: 5000
@@ -95,20 +95,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
         run: |
-          # 启动容器，挂载配置文件到正确路径
-          docker run -d --name subs-check \
+          # 启动容器，确保立即检测（移除 -d，同步运行）
+          docker run --rm \
             -v $(pwd)/config.yaml:/app/config/config.yaml \
             -v $(pwd)/output:/app/output \
             -e GH_TOKEN=$GH_TOKEN \
             -e GIST_ID=$GIST_ID \
             ghcr.io/beck-8/subs-check:latest
-          # 等待容器运行，最多等待20分钟（1200秒）
-          timeout 1200s bash -c "until docker ps -q -f name=subs-check | grep -q .; do sleep 5; echo 'Waiting for container to finish...'; done"
-          # 获取完整日志并保存
-          docker logs subs-check > subs-check.log 2>&1
-          cat subs-check.log
           # 检查容器退出码
-          EXIT_CODE=$(docker inspect subs-check --format='{{.State.ExitCode}}')
+          EXIT_CODE=$?
           echo "Container exited with code: $EXIT_CODE"
           if [ "$EXIT_CODE" -ne 0 ]; then exit $EXIT_CODE; fi
 
@@ -118,8 +113,8 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          # 从日志中提取可用节点数
-          NODE_COUNT=$(grep -oP '可用: \K\d+' subs-check.log | tail -1 || echo "0")
+          # 从 output/all.yaml 中提取节点数（假设为 YAML 格式）
+          NODE_COUNT=$(cat output/all.yaml | grep -c '^- ' || echo "0")
           MESSAGE="更新了 $NODE_COUNT 个节点"
           curl -s -X POST \
             "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage" \
