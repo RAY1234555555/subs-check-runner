@@ -40,7 +40,7 @@ save-method: gist
 
 # Gist 配置
 github-gist-id: "${{ secrets.GIST_ID }}"  # 从 Secrets 获取
-github-token: "${{ secrets.GITHUB_TOKEN }}"  # 从 Secrets 获取
+github-token: "${{ secrets.GH_TOKEN }}"  # 从 Secrets 获取
 github-api-mirror: "https://2.ikunya.ggff.net/github"
 
 # 订阅地址（从 url.txt 读取，由工作流动态替换）
