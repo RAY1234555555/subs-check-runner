@@ -2,7 +2,7 @@ name: Run Subs-Check
 
 on:
   schedule:
-    - cron: '0 */12 * * *'  # 每6小时运行一次（0:00、6:00、12:00、18:00 UTC）
+    - cron: '0 */6 * * *'  # 每6小时运行一次（0:00、6:00、12:00、18:00 UTC）
   workflow_dispatch:       # 允许手动触发
   push:
     paths:
@@ -16,16 +16,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 设置 Docker 环境
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      # 安装 Go 环境
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'  # 根据 subs-check 要求选择版本
 
-      # 配置 Docker 镜像加速源
-      - name: Configure Docker Mirror
+      # 克隆 subs-check 源码并构建
+      - name: Build subs-check
         run: |
-          sudo mkdir -p /etc/docker
-          echo '{"registry-mirrors": ["https://docker.imgdb.de"]}' | sudo tee /etc/docker/daemon.json
-          sudo systemctl restart docker
+          git clone https://github.com/beck-8/subs-check.git
+          cd subs-check
+          go build -o subs-check
+          mv subs-check ../
 
       # 读取 url.txt 并生成 config.yaml
       - name: Prepare Config with Sub-URLs
@@ -33,15 +36,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
         run: |
-          # 检查 url.txt 内容
           echo "Contents of url.txt:"
           cat url.txt
-          # 生成 sub-urls
           SUB_URLS=$(cat url.txt | grep -v '^$' | sed 's/^[[:space:]]*/    - /; s/[[:space:]]*$//')
-          # 生成 config.yaml
+          mkdir -p output
           cat <<EOF > config.yaml
           print-progress: true
-          concurrent: 10  # 降低到10，适配 Actions 资源
+          concurrent: 10
           check-interval: 0
           timeout: 10000
           speed-test-url: https://gh-proxy.henryjiu.workers.dev/https://github.com/AaronFeng753/Waifu2x-Extension-GUI/releases/download/v2.21.12/Waifu2x-Extension-GUI-v2.21.12-Portable.7z
@@ -50,7 +51,7 @@ jobs:
           listen-port: ":8199"
           rename-node: false
           keep-success-proxies: false
-          output-dir: "/app/output"
+          output-dir: "./output"
           save-method: gist
           github-gist-id: "$GIST_ID"
           github-token: "$GH_TOKEN"
@@ -61,21 +62,16 @@ jobs:
           echo "Generated config.yaml:"
           cat config.yaml
 
-      # 运行 Subs-Check 容器
-      - name: Run Subs-Check Container
+      # 运行 subs-check
+      - name: Run Subs-Check
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
         run: |
-          # 设置 1 小时超时，同步运行
-          timeout 3600s docker run --rm \
-            -v $(pwd)/config.yaml:/app/config/config.yaml \
-            -v $(pwd)/output:/app/output \
-            -e GH_TOKEN=$GH_TOKEN \
-            -e GIST_ID=$GIST_ID \
-            ghcr.io/beck-8/subs-check:latest
+          # 设置 1 小时超时
+          timeout 3600s ./subs-check -c config.yaml
           EXIT_CODE=$?
-          echo "Container exited with code: $EXIT_CODE"
+          echo "subs-check exited with code: $EXIT_CODE"
           if [ "$EXIT_CODE" -ne 0 ]; then exit $EXIT_CODE; fi
 
       # 发送 Telegram 通知
