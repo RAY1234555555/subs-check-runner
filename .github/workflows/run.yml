@@ -33,60 +33,32 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
         run: |
-          # 从 url.txt 生成 sub-urls 内容
-          SUB_URLS=$(cat url.txt | grep -v '^$' | sed 's/^/    - "/; s/$/"/')
-          # 生成 config.yaml，适配 Docker 配置
+          # 检查 url.txt 内容
+          echo "Contents of url.txt:"
+          cat url.txt
+          # 生成 sub-urls
+          SUB_URLS=$(cat url.txt | grep -v '^$' | sed 's/^[[:space:]]*/    - /; s/[[:space:]]*$//')
+          # 生成 config.yaml
           cat <<EOF > config.yaml
-          # 是否显示进度
           print-progress: true
-
-          # 并发线程数
-          concurrent: 20
-
-          # 检查间隔(设为0，确保立即检测)
+          concurrent: 10  # 降低到10，适配 Actions 资源
           check-interval: 0
-
-          # 超时时间(毫秒)
           timeout: 10000
-
-          # 测速地址
           speed-test-url: https://gh-proxy.henryjiu.workers.dev/https://github.com/AaronFeng753/Waifu2x-Extension-GUI/releases/download/v2.21.12/Waifu2x-Extension-GUI-v2.21.12-Portable.7z
-
-          # 最低测速结果舍弃(KB/s)
           min-speed: 256
-
-          # 下载测试时间(s)
           download-timeout: 15
-
-          # 监听端口
           listen-port: ":8199"
-
-          # 以节点IP查询位置重命名节点
           rename-node: false
-
-          # 保留之前测试成功的节点
           keep-success-proxies: false
-
-          # 输出目录（适配容器内部路径）
           output-dir: "/app/output"
-
-          # Telegram 通知
-          recipient-url:
-            - "tgram://7982374640:AAErQb4oIeVDRGcVPpJZ5GqRFyW2Se3ebBk/7930266661"
-
-          # 保存方法
           save-method: gist
-
-          # Gist 配置
           github-gist-id: "$GIST_ID"
           github-token: "$GH_TOKEN"
           github-api-mirror: "https://2.ikunya.ggff.net/github"
-
-          # 订阅地址
           sub-urls:
           $SUB_URLS
           EOF
-          # 检查生成结果
+          echo "Generated config.yaml:"
           cat config.yaml
 
       # 运行 Subs-Check 容器
@@ -95,14 +67,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
         run: |
-          # 同步运行容器，确保立即检测
-          docker run --rm \
+          # 设置 1 小时超时，同步运行
+          timeout 3600s docker run --rm \
             -v $(pwd)/config.yaml:/app/config/config.yaml \
             -v $(pwd)/output:/app/output \
             -e GH_TOKEN=$GH_TOKEN \
             -e GIST_ID=$GIST_ID \
             ghcr.io/beck-8/subs-check:latest
-          # 检查退出码
           EXIT_CODE=$?
           echo "Container exited with code: $EXIT_CODE"
           if [ "$EXIT_CODE" -ne 0 ]; then exit $EXIT_CODE; fi
@@ -113,7 +84,6 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          # 从 output/all.yaml 中提取节点数
           NODE_COUNT=$(cat output/all.yaml | grep -c '^- ' || echo "0")
           MESSAGE="更新了 $NODE_COUNT 个节点"
           curl -s -X POST \
@@ -127,7 +97,7 @@ jobs:
           ls -la output/
           cat output/all.yaml || echo "No output file found"
 
-      # 上传输出文件到 GitHub Artifacts
+      # 上传输出文件
       - name: Upload Output Artifact
         uses: actions/upload-artifact@v4
         with:
