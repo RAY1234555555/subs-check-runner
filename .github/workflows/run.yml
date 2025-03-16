@@ -25,10 +25,12 @@ jobs:
       # 克隆 subs-check 源码并构建
       - name: Build subs-check
         run: |
-          git clone https://github.com/beck-8/subs-check.git
-          cd subs-check
+          git clone https://github.com/beck-8/subs-check.git subs-check-src
+          cd subs-check-src
           go build -o subs-check
-          mv subs-check ../
+          mv subs-check ../subs-check-bin
+          cd ..
+          ls -la  # 检查文件
 
       # 读取 url.txt 并生成 config.yaml
       - name: Prepare Config with Sub-URLs
@@ -68,8 +70,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
         run: |
-          # 设置 1 小时超时
-          timeout 3600s ./subs-check -c config.yaml
+          timeout 3600s ./subs-check-bin -c config.yaml
           EXIT_CODE=$?
           echo "subs-check exited with code: $EXIT_CODE"
           if [ "$EXIT_CODE" -ne 0 ]; then exit $EXIT_CODE; fi
