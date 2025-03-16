@@ -70,7 +70,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
         run: |
-          timeout 3600s ./subs-check-bin -c config.yaml
+          timeout 3600s ./subs-check-bin -f config.yaml
           EXIT_CODE=$?
           echo "subs-check exited with code: $EXIT_CODE"
           if [ "$EXIT_CODE" -ne 0 ]; then exit $EXIT_CODE; fi
